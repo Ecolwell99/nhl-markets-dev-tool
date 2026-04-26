@@ -34,6 +34,18 @@ def fetch_json(url: str) -> dict:
     return response.json()
 
 
+def extract_abbrev(value, fallback="UNK"):
+    if isinstance(value, str) and value:
+        return value
+    if isinstance(value, dict):
+        if value.get("default"):
+            return value["default"]
+        for v in value.values():
+            if isinstance(v, str) and v:
+                return v
+    return fallback
+
+
 def load_live_games():
     data = fetch_json(SCOREBOARD_URL)
     games = []
@@ -42,8 +54,8 @@ def load_live_games():
         for game in day.get("games", []):
             state = game.get("gameState")
             if state in {"LIVE", "CRIT"}:
-                away = game.get("awayTeam", {}).get("abbrev", "AWAY")
-                home = game.get("homeTeam", {}).get("abbrev", "HOME")
+                away = extract_abbrev(game.get("awayTeam", {}).get("abbrev"), "AWAY")
+                home = extract_abbrev(game.get("homeTeam", {}).get("abbrev"), "HOME")
                 game_id = game.get("id")
                 label = f"{away} @ {home} ({game_id})"
                 games.append(
@@ -55,39 +67,6 @@ def load_live_games():
                     }
                 )
     return games
-
-
-def build_team_lookup(game_data: dict) -> dict:
-    lookup = {}
-
-    home = game_data.get("homeTeam", {}) or {}
-    away = game_data.get("awayTeam", {}) or {}
-
-    home_id = home.get("id")
-    away_id = away.get("id")
-
-    home_abbrev = (
-        home.get("abbrev")
-        or home.get("abbrevName")
-        or home.get("triCode")
-        or home.get("placeName", {}).get("default")
-        or "HOME"
-    )
-
-    away_abbrev = (
-        away.get("abbrev")
-        or away.get("abbrevName")
-        or away.get("triCode")
-        or away.get("placeName", {}).get("default")
-        or "AWAY"
-    )
-
-    if home_id is not None:
-        lookup[home_id] = home_abbrev
-    if away_id is not None:
-        lookup[away_id] = away_abbrev
-
-    return lookup
 
 
 def parse_clock_to_seconds(clock_str: str):
@@ -104,41 +83,99 @@ def seconds_to_clock(total_seconds: int) -> str:
     return f"{minutes}:{seconds:02d}"
 
 
-def convert_to_time_remaining(clock_str: str, period: int | None) -> str:
+def convert_to_time_remaining(clock_str: str, period: int | None, game_data=None) -> str:
     secs_elapsed = parse_clock_to_seconds(clock_str)
     if secs_elapsed is None:
         return clock_str
 
-    period_length = 300 if (period is not None and period > 3) else 1200
-    secs_remaining = max(0, period_length - secs_elapsed)
-    return seconds_to_clock(secs_remaining)
+    period_len = 1200
+
+    if period is not None and period > 3:
+        game_type = None
+        if game_data is not None:
+            game_type = game_data.get("gameType")
+
+        game_type_str = str(game_type).strip() if game_type is not None else ""
+
+        if game_type_str in {"3", "03"}:
+            period_len = 1200
+        elif game_type_str in {"2", "02"}:
+            period_len = 300
+        else:
+            period_len = 1200 if secs_elapsed > 300 else 300
+
+    return seconds_to_clock(max(0, period_len - secs_elapsed))
+
+
+def build_team_lookup(game_data: dict) -> dict:
+    lookup = {}
+
+    home = game_data.get("homeTeam", {}) or {}
+    away = game_data.get("awayTeam", {}) or {}
+
+    home_id = home.get("id")
+    away_id = away.get("id")
+
+    home_abbrev = extract_abbrev(home.get("abbrev"), "HOME")
+    away_abbrev = extract_abbrev(away.get("abbrev"), "AWAY")
+
+    if home_id is not None:
+        lookup[home_id] = home_abbrev
+    if away_id is not None:
+        lookup[away_id] = away_abbrev
+
+    return lookup
+
+
+def get_home_away_abbrevs(game_data: dict):
+    home = game_data.get("homeTeam", {}) or {}
+    away = game_data.get("awayTeam", {}) or {}
+
+    home_abbrev = extract_abbrev(home.get("abbrev"), "HOME")
+    away_abbrev = extract_abbrev(away.get("abbrev"), "AWAY")
+    return home_abbrev, away_abbrev
 
 
 def safe_team(play: dict, team_lookup: dict) -> str:
-    owner_team_id = play.get("eventOwnerTeamId")
-    if owner_team_id in team_lookup:
-        return team_lookup[owner_team_id]
+    details = play.get("details", {}) or {}
 
-    team_abbrev = play.get("teamAbbrev")
-    if isinstance(team_abbrev, dict) and team_abbrev.get("default"):
-        return team_abbrev["default"]
-    if isinstance(team_abbrev, str) and team_abbrev:
-        return team_abbrev
+    candidate_team_ids = [
+        play.get("eventOwnerTeamId"),
+        play.get("teamId"),
+        details.get("eventOwnerTeamId"),
+        details.get("teamId"),
+    ]
+    for team_id in candidate_team_ids:
+        if team_id in team_lookup:
+            return team_lookup[team_id]
 
-    team_obj = play.get("team", {})
-    if isinstance(team_obj, dict) and team_obj.get("abbrev"):
-        return team_obj["abbrev"]
-
-    details = play.get("details", {})
-    if isinstance(details, dict) and details.get("eventOwnerTeamAbbrev"):
-        return details["eventOwnerTeamAbbrev"]
+    candidate_abbrevs = [
+        play.get("teamAbbrev"),
+        play.get("team", {}).get("abbrev") if isinstance(play.get("team"), dict) else None,
+        details.get("eventOwnerTeamAbbrev"),
+        details.get("teamAbbrev"),
+        details.get("winningTeamAbbrev"),
+    ]
+    for abbrev in candidate_abbrevs:
+        parsed = extract_abbrev(abbrev, None)
+        if parsed:
+            return parsed
 
     return "UNK"
+
+
+def label_home_away(team: str, home_abbrev: str, away_abbrev: str) -> str:
+    if team == home_abbrev:
+        return f"{team} (Home)"
+    if team == away_abbrev:
+        return f"{team} (Away)"
+    return team
 
 
 def parse_raw_events(game_data: dict) -> list[dict]:
     plays = game_data.get("plays", []) or []
     team_lookup = build_team_lookup(game_data)
+    home_abbrev, away_abbrev = get_home_away_abbrevs(game_data)
 
     raw_events = []
 
@@ -155,6 +192,9 @@ def parse_raw_events(game_data: dict) -> list[dict]:
         else:
             display_type = "GOAL"
 
+        team = safe_team(play, team_lookup)
+        team = label_home_away(team, home_abbrev, away_abbrev)
+
         raw_events.append(
             {
                 "event_id": play.get("eventId"),
@@ -163,8 +203,9 @@ def parse_raw_events(game_data: dict) -> list[dict]:
                 "time_remaining": convert_to_time_remaining(
                     play.get("timeInPeriod", ""),
                     play.get("periodDescriptor", {}).get("number"),
+                    game_data,
                 ),
-                "team": safe_team(play, team_lookup),
+                "team": team,
                 "raw_type": play_type,
                 "display_type": display_type,
             }
@@ -229,6 +270,8 @@ def get_game_state(game_id: int) -> dict:
     live_period = events[-1]["period"] if events else 1
     live_period_faceoffs = [e for e in faceoffs if e["period"] == live_period]
 
+    home_abbrev, away_abbrev = get_home_away_abbrevs(data)
+
     return {
         "events": events,
         "faceoffs": faceoffs,
@@ -240,6 +283,10 @@ def get_game_state(game_id: int) -> dict:
         "live_period": live_period,
         "live_period_faceoff_count": len(live_period_faceoffs),
         "last_faceoff": faceoffs[-1] if faceoffs else None,
+        "home_abbrev": home_abbrev,
+        "away_abbrev": away_abbrev,
+        "home_label": f"{home_abbrev} (Home)",
+        "away_label": f"{away_abbrev} (Away)",
     }
 
 
@@ -256,18 +303,18 @@ def bucket_label(start_sec: int, end_sec: int) -> str:
     return f"{fmt(start_sec)}-{fmt(end_sec)}"
 
 
-def build_two_minute_buckets(period_events: list[dict]) -> list[dict]:
+def build_two_minute_buckets(period_events: list[dict], home_label: str, away_label: str) -> list[dict]:
     buckets = [
-        {"start": 1200, "end": 1081},  # 20:00-18:01
-        {"start": 1080, "end": 961},   # 18:00-16:01
-        {"start": 960, "end": 841},    # 16:00-14:01
-        {"start": 840, "end": 721},    # 14:00-12:01
-        {"start": 720, "end": 601},    # 12:00-10:01
-        {"start": 600, "end": 481},    # 10:00-8:01
-        {"start": 480, "end": 361},    # 8:00-6:01
-        {"start": 360, "end": 241},    # 6:00-4:01
-        {"start": 240, "end": 121},    # 4:00-2:01
-        {"start": 120, "end": 1},      # 2:00-0:01
+        {"start": 1200, "end": 1081},
+        {"start": 1080, "end": 961},
+        {"start": 960, "end": 841},
+        {"start": 840, "end": 721},
+        {"start": 720, "end": 601},
+        {"start": 600, "end": 481},
+        {"start": 480, "end": 361},
+        {"start": 360, "end": 241},
+        {"start": 240, "end": 121},
+        {"start": 120, "end": 1},
     ]
 
     sogs = [e for e in period_events if e["display_type"] in {"SOG", "GOAL"}]
@@ -282,14 +329,44 @@ def build_two_minute_buckets(period_events: list[dict]) -> list[dict]:
             if bucket["end"] <= secs <= bucket["start"]:
                 hits.append(event)
 
+        home_yes = any(e["team"] == home_label for e in hits)
+        away_yes = any(e["team"] == away_label for e in hits)
+
         results.append(
             {
                 "window": bucket_label(bucket["start"], bucket["end"]),
-                "result": "YES" if hits else "NO",
-                "count": len(hits),
-                "events": hits,
+                "home_result": "YES" if home_yes else "NO",
+                "away_result": "YES" if away_yes else "NO",
             }
         )
+    return results
+
+
+def build_first_sog_after_faceoff(period_faceoffs: list[dict], period_events: list[dict]) -> list[dict]:
+    results = []
+
+    for faceoff in period_faceoffs:
+        first_sog = None
+        found_anchor = False
+
+        for event in period_events:
+            if event["event_id"] == faceoff["event_id"]:
+                found_anchor = True
+                continue
+
+            if found_anchor and event["display_type"] in {"SOG", "GOAL"}:
+                first_sog = event
+                break
+
+        results.append(
+            {
+                "Faceoff #": faceoff["faceoff_number"],
+                "Faceoff Time": faceoff["time_remaining"],
+                "Faceoff Team": faceoff["team"],
+                "First Shot": f"{first_sog['time_remaining']} {first_sog['team']}" if first_sog else "NO",
+            }
+        )
+
     return results
 
 
@@ -347,7 +424,6 @@ def render_event_table(events: list[dict], title: str):
             {
                 "Period": e["period"],
                 "Clock": e["time_remaining"],
-                "Raw Time": e["time_in_period_raw"],
                 "Type": e["display_type"],
                 "Team": e["team"],
                 "Faceoff #": e["faceoff_number"] if e["faceoff_number"] is not None else "",
@@ -493,7 +569,7 @@ if st.session_state.tracking:
         if state["last_faceoff"]:
             lf = state["last_faceoff"]
             st.markdown(
-                f"**Last Faceoff:** P{lf['period']} {lf['time_remaining']} | Winner: {lf['team']} | Faceoff #{lf['faceoff_number']}"
+                f"**Last Faceoff:** P{lf['period']} {lf['time_remaining']} | {lf['team']} | Faceoff #{lf['faceoff_number']}"
             )
         else:
             st.markdown("**Last Faceoff:** none")
@@ -512,9 +588,7 @@ if st.session_state.tracking:
         if not periods_present:
             periods_present = [1]
 
-        control_left, control_right = st.columns([1, 2])
-
-        with control_left:
+        with st.columns([1, 2])[0]:
             selected_period = st.selectbox(
                 "Review period",
                 options=periods_present,
@@ -553,22 +627,20 @@ if st.session_state.tracking:
 
         with tab3:
             st.subheader(f"Period {selected_period} - 2 Minute SOG Buckets")
-            bucket_results = build_two_minute_buckets(period_events)
+
+            bucket_results = build_two_minute_buckets(
+                period_events,
+                state["home_label"],
+                state["away_label"],
+            )
 
             rows = []
             for bucket in bucket_results:
-                event_summary = " | ".join(
-                    [
-                        f"{e['time_remaining']} {e['team']} {e['display_type']}"
-                        for e in bucket["events"]
-                    ]
-                )
                 rows.append(
                     {
                         "Window": bucket["window"],
-                        "Result": bucket["result"],
-                        "SOG Count": bucket["count"],
-                        "Events": event_summary,
+                        state["home_label"]: bucket["home_result"],
+                        state["away_label"]: bucket["away_result"],
                     }
                 )
 
@@ -585,45 +657,20 @@ if st.session_state.tracking:
                         f"""
                         **Period {selected_period} Faceoff #{first_faceoff['faceoff_number']}**  
                         **Time:** {first_faceoff['time_remaining']}  
-                        **Winner:** {first_faceoff['team']}
+                        **Team:** {first_faceoff['team']}
                         """
                     )
                 else:
                     st.info("No faceoff found in this period.")
 
             with right:
-                st.subheader("Next SOG After Faceoff #")
-                max_faceoff_num = max(
-                    [f["faceoff_number"] for f in period_faceoffs],
-                    default=1,
-                )
-                chosen_faceoff_num = st.number_input(
-                    "Faceoff number",
-                    min_value=1,
-                    max_value=max_faceoff_num,
-                    value=1,
-                    step=1,
-                    key=f"faceoff_num_{selected_period}",
-                )
+                st.subheader("First Shot After Each Faceoff")
 
-                preview_sog, preview_error = preview_next_sog_after_faceoff(
-                    period_faceoffs,
-                    period_events,
-                    chosen_faceoff_num,
-                )
-
-                if preview_error:
-                    st.info(preview_error)
+                rows = build_first_sog_after_faceoff(period_faceoffs, period_events)
+                if rows:
+                    st.dataframe(rows, use_container_width=True, hide_index=True)
                 else:
-                    st.markdown(
-                        f"""
-                        **Period {selected_period} | After Faceoff #{chosen_faceoff_num}:**  
-                        **Next SOG Event:** P{preview_sog['period']} {preview_sog['time_remaining']}  
-                        **Team:** {preview_sog['team']}  
-                        **Type:** {preview_sog['display_type']}  
-                        **SOG #:** {preview_sog['sog_number']}
-                        """
-                    )
+                    st.info("No faceoffs found in this period.")
 
     except Exception as e:
         st.error(f"Refresh error: {e}")
