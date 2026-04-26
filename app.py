@@ -304,52 +304,16 @@ def warning_box(message: str, warning_type: str):
     )
 
 
-def render_event_table(events: list[dict], title: str):
-    st.subheader(title)
-    if not events:
-        st.info("No events to show.")
-        return
-
-    rows = [
-        {
-            "Period": e["period"],
-            "Clock": e["time_remaining"],
-            "Type": e["display_type"],
-            "Team": e["team"],
-            "Faceoff #": e["faceoff_number"] if e["faceoff_number"] is not None else "",
-            "SOG #": e["sog_number"] if e["sog_number"] is not None else "",
-        }
-        for e in events
-    ]
-    st.dataframe(rows, use_container_width=True, hide_index=True)
-
-
-def preview_next_sog_after_faceoff(period_faceoffs: list[dict], period_events: list[dict], faceoff_number: int):
-    anchor = next((f for f in period_faceoffs if f["faceoff_number"] == faceoff_number), None)
-    if not anchor:
-        return None, f"Faceoff #{faceoff_number} not found in this period."
-
-    found_anchor = False
-    for event in period_events:
-        if event["event_id"] == anchor["event_id"]:
-            found_anchor = True
-            continue
-        if found_anchor and event["display_type"] in {"SOG", "GOAL"}:
-            return event, None
-
-    return None, f"No subsequent SOG found yet after Faceoff #{faceoff_number} in this period."
-
-
 # --- App ---
 
 init_state()
 
-st.title("NHL Markets Dev Tool")
-st.caption("Dev / review tool only. Do not result off this tool.")
+# Sidebar: controls
+with st.sidebar:
+    st.title("NHL Markets")
+    st.caption("Dev / review tool only. Do not result off this tool.")
+    st.divider()
 
-top_left, top_mid, top_right = st.columns([1.2, 2, 1.2])
-
-with top_left:
     if st.button("Load Live Games", use_container_width=True):
         try:
             games = load_live_games()
@@ -364,19 +328,18 @@ with top_left:
                 if st.session_state.selected_game_label not in labels:
                     st.session_state.selected_game_label = labels[0]
                     st.session_state.selected_game_id = games[0]["id"]
-                st.success(f"Loaded {len(games)} live game(s).")
+                st.success(f"Loaded {len(games)} game(s).")
         except Exception as e:
-            st.error(f"Error loading games: {e}")
+            st.error(f"Error: {e}")
 
-with top_mid:
     game_labels = [g["label"] for g in st.session_state.games]
     selected_label = st.selectbox(
-        "Live games",
+        "Game",
         options=game_labels,
         index=game_labels.index(st.session_state.selected_game_label)
         if st.session_state.selected_game_label in game_labels
         else None,
-        placeholder="Load live games first",
+        placeholder="Load games first",
     )
     if selected_label:
         st.session_state.selected_game_label = selected_label
@@ -385,10 +348,9 @@ with top_mid:
                 st.session_state.selected_game_id = game["id"]
                 break
 
-with top_right:
-    if st.button("Track Selected Game", use_container_width=True):
+    if st.button("Track Selected Game", use_container_width=True, type="primary"):
         if st.session_state.selected_game_id is None:
-            st.warning("Load live games and select one first.")
+            st.warning("Load and select a game first.")
         else:
             st.session_state.tracking = True
             st.session_state.previous_faceoff_count = None
@@ -396,6 +358,7 @@ with top_right:
             st.session_state.warning_message = "STATUS: OK"
             st.session_state.warning_type = "ok"
 
+# Main area
 if st.session_state.tracking:
     st_autorefresh(interval=REFRESH_MS, key="market_dev_refresh")
 
@@ -431,61 +394,44 @@ if st.session_state.tracking:
         st.session_state.previous_faceoff_count = live_period_faceoff_count
         st.session_state.previous_live_period = live_period
 
+        # Status banner
         warning_box(st.session_state.warning_message, st.session_state.warning_type)
 
+        # Metrics row
         a, b, c, d = st.columns(4)
         with a:
             st.metric("Live Period", live_period)
         with b:
-            st.metric("Faceoffs (Live Period)", live_period_faceoff_count)
+            st.metric("Faceoffs (Period)", live_period_faceoff_count)
         with c:
             st.metric("Faceoffs (Game)", state["faceoff_total"])
         with d:
             st.metric("SOG Events (Game)", state["sog_total"])
 
         if lf := state["last_faceoff"]:
-            st.markdown(
-                f"**Last Faceoff:** P{lf['period']} {lf['time_remaining']} | {lf['team']} | Faceoff #{lf['faceoff_number']}"
+            st.caption(
+                f"Last faceoff — P{lf['period']} {lf['time_remaining']} | {lf['team']} | #{lf['faceoff_number']}"
             )
-        else:
-            st.markdown("**Last Faceoff:** none")
 
         st.divider()
 
+        # Period selector
         periods_present = sorted({e["period"] for e in state["events"] if e["period"] is not None}) or [1]
-
-        with st.columns([1, 2])[0]:
+        with st.columns([1, 3])[0]:
             selected_period = st.selectbox(
-                "Review period",
+                "Period",
                 options=periods_present,
                 index=periods_present.index(live_period) if live_period in periods_present else len(periods_present) - 1,
             )
 
         period_events = [e for e in state["events"] if e["period"] == selected_period]
         period_faceoffs = [e for e in period_events if e["display_type"] == "FACEOFF"]
-        period_sogs = [e for e in period_events if e["display_type"] in {"SOG", "GOAL"}]
 
-        tab1, tab2, tab3, tab4 = st.tabs(["Timeline", "Period Review", "2-Min SOG Buckets", "Market Preview"])
+        # Two panels side by side
+        left, right = st.columns(2)
 
-        with tab1:
-            render_event_table(state["events"], "Full Event Timeline")
-
-        with tab2:
-            st.subheader(f"Period {selected_period} Summary")
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.metric("Faceoffs", len(period_faceoffs))
-            with col_b:
-                st.metric("SOG Events", len(period_sogs))
-
-            left, right = st.columns(2)
-            with left:
-                render_event_table(period_faceoffs, f"Period {selected_period} Faceoffs")
-            with right:
-                render_event_table(period_sogs, f"Period {selected_period} SOG Events")
-
-        with tab3:
-            st.subheader(f"Period {selected_period} - 2 Minute SOG Buckets")
+        with left:
+            st.subheader(f"P{selected_period} — 2-Min SOG Buckets")
             bucket_results = build_two_minute_buckets(period_events, state["home_label"], state["away_label"])
             rows = [
                 {
@@ -497,28 +443,19 @@ if st.session_state.tracking:
             ]
             st.dataframe(rows, use_container_width=True, hide_index=True)
 
-        with tab4:
-            left, right = st.columns(2)
+        with right:
+            st.subheader(f"P{selected_period} — First Shot After Faceoff")
+            rows = build_first_sog_after_faceoff(period_faceoffs, period_events)
+            if rows:
+                st.dataframe(rows, use_container_width=True, hide_index=True)
+            else:
+                st.info("No faceoffs found in this period.")
 
-            with left:
-                st.subheader("Next Faceoff Preview")
-                first_faceoff = period_faceoffs[0] if period_faceoffs else None
-                if first_faceoff:
-                    st.markdown(
-                        f"**Period {selected_period} Faceoff #{first_faceoff['faceoff_number']}**  \n"
-                        f"**Time:** {first_faceoff['time_remaining']}  \n"
-                        f"**Team:** {first_faceoff['team']}"
-                    )
-                else:
-                    st.info("No faceoff found in this period.")
-
-            with right:
-                st.subheader("First Shot After Each Faceoff")
-                rows = build_first_sog_after_faceoff(period_faceoffs, period_events)
-                if rows:
-                    st.dataframe(rows, use_container_width=True, hide_index=True)
-                else:
-                    st.info("No faceoffs found in this period.")
+            if first_faceoff := (period_faceoffs[0] if period_faceoffs else None):
+                st.caption(
+                    f"First faceoff this period — #{first_faceoff['faceoff_number']} "
+                    f"at {first_faceoff['time_remaining']} | {first_faceoff['team']}"
+                )
 
     except Exception as e:
         st.error(f"Refresh error: {e}")
