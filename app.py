@@ -464,25 +464,26 @@ if st.session_state.tracking:
         # Status banner
         warning_box(st.session_state.warning_message, st.session_state.warning_type)
 
-        # Metrics row
-        a, b, c, d = st.columns(4)
-        with a:
-            st.metric("Live Period", live_period)
-        with b:
-            st.metric("Faceoffs (Period)", live_period_faceoff_count)
-        with c:
-            st.metric("Faceoffs (Game)", state["faceoff_total"])
-        with d:
-            st.metric("SOG Events (Game)", state["sog_total"])
-
-        if lf := state["last_faceoff"]:
-            st.caption(
-                f"Last faceoff — P{lf['period']} {lf['time_remaining']} | {lf['team']} | #{lf['faceoff_number']}"
+        # Hero row: period + live faceoff count
+        hero_left, hero_right = st.columns([1, 3])
+        with hero_left:
+            st.markdown(
+                f"<div style='font-size:22px; font-weight:600; opacity:0.6; margin-bottom:4px;'>PERIOD</div>"
+                f"<div style='font-size:80px; font-weight:700; line-height:1;'>{live_period}</div>",
+                unsafe_allow_html=True,
             )
+        with hero_right:
+            st.markdown(
+                f"<div style='font-size:22px; font-weight:600; opacity:0.6; margin-bottom:4px;'>LIVE FACEOFFS</div>"
+                f"<div style='font-size:80px; font-weight:700; line-height:1;'>{live_period_faceoff_count}</div>",
+                unsafe_allow_html=True,
+            )
+            if lf := state["last_faceoff"]:
+                st.caption(f"Last — P{lf['period']} {lf['time_remaining']} | {lf['team']} | #{lf['faceoff_number']}")
 
         st.divider()
 
-        # Period selector
+        # Period selector for the tables below
         periods_present = sorted({e["period"] for e in state["events"] if e["period"] is not None}) or [1]
         with st.columns([1, 3])[0]:
             selected_period = st.selectbox(
@@ -494,10 +495,20 @@ if st.session_state.tracking:
         period_events = [e for e in state["events"] if e["period"] == selected_period]
         period_faceoffs = [e for e in period_events if e["display_type"] == "FACEOFF"]
 
-        # Three panels
-        left, mid, right = st.columns(3)
+        # Two panels: first shot left, SOG buckets right
+        left, right = st.columns(2)
 
         with left:
+            st.subheader(f"P{selected_period} — First Shot After Faceoff")
+            rows = build_first_sog_after_faceoff(period_faceoffs, period_events)
+            if rows:
+                if st.session_state.filter_recent:
+                    rows = list(reversed(rows))
+                st.dataframe(rows, use_container_width=True, hide_index=True, height=35 * len(rows) + 38)
+            else:
+                st.info("No faceoffs found in this period.")
+
+        with right:
             st.subheader(f"P{selected_period} — 2-Min SOG Buckets")
             bucket_results = build_two_minute_buckets(period_events, state["home_label"], state["away_label"])
             rows = [
@@ -511,30 +522,6 @@ if st.session_state.tracking:
             if st.session_state.filter_recent:
                 rows = list(reversed(rows))
             st.dataframe(rows, use_container_width=True, hide_index=True)
-
-        with mid:
-            st.subheader(f"P{selected_period} — First Shot After Faceoff")
-            rows = build_first_sog_after_faceoff(period_faceoffs, period_events)
-            if rows:
-                if st.session_state.filter_recent:
-                    rows = list(reversed(rows))
-                st.dataframe(rows, use_container_width=True, hide_index=True, height=35 * len(rows) + 38)
-            else:
-                st.info("No faceoffs found in this period.")
-
-            if first_faceoff := (period_faceoffs[0] if period_faceoffs else None):
-                st.caption(
-                    f"First faceoff this period — #{first_faceoff['faceoff_number']} "
-                    f"at {first_faceoff['time_remaining']} | {first_faceoff['team']}"
-                )
-
-        with right:
-            st.subheader("Faceoff Counter")
-            st.markdown(
-                f"<div style='font-size:80px; font-weight:700; line-height:1;'>{live_period_faceoff_count}</div>",
-                unsafe_allow_html=True,
-            )
-            st.caption(f"P{live_period} faceoffs")
 
     except Exception as e:
         st.error(f"Refresh error: {e}")
