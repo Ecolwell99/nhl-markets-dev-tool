@@ -25,6 +25,7 @@ def init_state():
         "previous_sog_event_ids": set(),
         "warning_message": "STATUS: OK",
         "warning_type": "ok",
+        "filter_recent": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -268,6 +269,10 @@ def build_two_minute_buckets(period_events: list[dict], home_label: str, away_la
     ]
     sogs = [e for e in period_events if e["display_type"] in {"SOG", "GOAL"}]
 
+    # Best estimate of current clock: most recent event in the period
+    clocks = [parse_clock_to_seconds(e["time_remaining"]) for e in period_events]
+    current_secs = min((s for s in clocks if s is not None), default=None)
+
     results = []
     for start, end in buckets:
         hits = [
@@ -275,10 +280,16 @@ def build_two_minute_buckets(period_events: list[dict], home_label: str, away_la
             if (secs := parse_clock_to_seconds(e["time_remaining"])) is not None
             and end <= secs <= start
         ]
+        # Bucket is complete only when the clock has passed its end boundary
+        complete = current_secs is not None and current_secs < end
+
+        home_hit = any(e["team"] == home_label for e in hits)
+        away_hit = any(e["team"] == away_label for e in hits)
+
         results.append({
             "window": bucket_label(start, end),
-            "home_result": "YES" if any(e["team"] == home_label for e in hits) else "NO",
-            "away_result": "YES" if any(e["team"] == away_label for e in hits) else "NO",
+            "home_result": "YES" if home_hit else ("NO" if complete else "—"),
+            "away_result": "YES" if away_hit else ("NO" if complete else "—"),
         })
     return results
 
@@ -364,6 +375,12 @@ with st.sidebar:
                 st.session_state.selected_game_id = game["id"]
                 break
 
+    st.divider()
+    label = "Newest First: ON" if st.session_state.filter_recent else "Newest First: OFF"
+    if st.button(label, use_container_width=True):
+        st.session_state.filter_recent = not st.session_state.filter_recent
+
+    st.divider()
     if st.button("Track Selected Game", use_container_width=True, type="primary"):
         if st.session_state.selected_game_id is None:
             st.warning("Load and select a game first.")
@@ -497,6 +514,8 @@ if st.session_state.tracking:
             st.subheader(f"P{selected_period} — First Shot After Faceoff")
             rows = build_first_sog_after_faceoff(period_faceoffs, period_events)
             if rows:
+                if st.session_state.filter_recent:
+                    rows = list(reversed(rows))
                 st.dataframe(rows, use_container_width=True, hide_index=True, height=35 * len(rows) + 38)
             else:
                 st.info("No faceoffs found in this period.")
