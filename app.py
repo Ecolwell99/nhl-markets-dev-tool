@@ -21,6 +21,8 @@ def init_state():
         "tracking": False,
         "previous_faceoff_count": None,
         "previous_live_period": None,
+        "previous_faceoff_teams": {},
+        "previous_sog_event_ids": set(),
         "warning_message": "STATUS: OK",
         "warning_type": "ok",
     }
@@ -241,6 +243,20 @@ def get_game_state(game_id: int) -> dict:
     }
 
 
+def bucket_for_sog(event: dict) -> str | None:
+    buckets = [
+        (1200, 1081), (1080, 961), (960, 841), (840, 721), (720, 601),
+        (600, 481), (480, 361), (360, 241), (240, 121), (120, 1),
+    ]
+    secs = parse_clock_to_seconds(event["time_remaining"])
+    if secs is None:
+        return None
+    for start, end in buckets:
+        if end <= secs <= start:
+            return bucket_label(start, end)
+    return None
+
+
 def bucket_label(start_sec: int, end_sec: int) -> str:
     return f"{seconds_to_clock(start_sec)}-{seconds_to_clock(end_sec)}"
 
@@ -355,6 +371,8 @@ with st.sidebar:
             st.session_state.tracking = True
             st.session_state.previous_faceoff_count = None
             st.session_state.previous_live_period = None
+            st.session_state.previous_faceoff_teams = {}
+            st.session_state.previous_sog_event_ids = {}
             st.session_state.warning_message = "STATUS: OK"
             st.session_state.warning_type = "ok"
 
@@ -370,29 +388,61 @@ if st.session_state.tracking:
         previous_faceoff_count = st.session_state.previous_faceoff_count
         previous_live_period = st.session_state.previous_live_period
 
+        # Build current snapshots for diffing
+        current_faceoff_teams = {
+            e["event_id"]: (e["period"], e["faceoff_number"], e["team"])
+            for e in state["faceoffs"]
+        }
+        current_sog_ids = {e["event_id"]: e for e in state["sog_events"]}
+
+        prev_faceoff_teams = st.session_state.previous_faceoff_teams
+        prev_sog_ids = st.session_state.previous_sog_event_ids
+
+        alerts = []
+
         if previous_live_period == live_period:
             if previous_faceoff_count is not None:
                 delta = live_period_faceoff_count - previous_faceoff_count
                 if delta < 0:
-                    st.session_state.warning_message = (
-                        f"⚠ COUNT DECREASE: {previous_faceoff_count} → {live_period_faceoff_count}"
-                    )
-                    st.session_state.warning_type = "alert"
+                    alerts.append(f"FACEOFF COUNT DECREASE: {previous_faceoff_count} → {live_period_faceoff_count}")
                 elif delta > 1:
-                    st.session_state.warning_message = f"⚠ MULTIPLE FACEOFFS ADDED: +{delta}"
-                    st.session_state.warning_type = "alert"
-                else:
-                    st.session_state.warning_message = "STATUS: OK"
-                    st.session_state.warning_type = "ok"
-            else:
-                st.session_state.warning_message = "STATUS: OK"
-                st.session_state.warning_type = "ok"
+                    alerts.append(f"MULTIPLE FACEOFFS ADDED: +{delta}")
+
+            # Faceoff team flips: same event_id, different team
+            for eid, (period, fo_num, team) in current_faceoff_teams.items():
+                if eid in prev_faceoff_teams:
+                    _, _, prev_team = prev_faceoff_teams[eid]
+                    if prev_team != team:
+                        alerts.append(f"FACEOFF TEAM CHANGED: P{period} Faceoff #{fo_num} — {prev_team} → {team}")
+
+            # SOG removed: event_id present before, gone now
+            for eid in prev_sog_ids:
+                if eid not in current_sog_ids:
+                    prev_event = prev_sog_ids[eid] if isinstance(prev_sog_ids, dict) else None
+                    if prev_event:
+                        bucket = bucket_for_sog(prev_event)
+                        bucket_str = f" (bucket {bucket})" if bucket else ""
+                        alerts.append(
+                            f"SOG REMOVED: P{prev_event['period']} {prev_event['time_remaining']} "
+                            f"{prev_event['team']}{bucket_str}"
+                        )
+                    else:
+                        alerts.append(f"SOG REMOVED: event {eid}")
         else:
-            st.session_state.warning_message = f"Period {live_period} started"
+            alerts.append(f"Period {live_period} started")
+
+        if alerts:
+            st.session_state.warning_message = " | ".join(f"⚠ {a}" for a in alerts)
+            period_changed = previous_live_period != live_period
+            st.session_state.warning_type = "ok" if period_changed else "alert"
+        else:
+            st.session_state.warning_message = "STATUS: OK"
             st.session_state.warning_type = "ok"
 
         st.session_state.previous_faceoff_count = live_period_faceoff_count
         st.session_state.previous_live_period = live_period
+        st.session_state.previous_faceoff_teams = current_faceoff_teams
+        st.session_state.previous_sog_event_ids = current_sog_ids
 
         # Status banner
         warning_box(st.session_state.warning_message, st.session_state.warning_type)
@@ -447,7 +497,7 @@ if st.session_state.tracking:
             st.subheader(f"P{selected_period} — First Shot After Faceoff")
             rows = build_first_sog_after_faceoff(period_faceoffs, period_events)
             if rows:
-                st.dataframe(rows, use_container_width=True, hide_index=True)
+                st.dataframe(rows, use_container_width=True, hide_index=True, height=35 * len(rows) + 38)
             else:
                 st.info("No faceoffs found in this period.")
 
