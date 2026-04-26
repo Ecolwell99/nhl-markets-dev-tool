@@ -294,21 +294,6 @@ def build_two_minute_buckets(period_events: list[dict], home_label: str, away_la
     return results
 
 
-def render_faceoff_list(faceoffs: list[dict], newest_first: bool):
-    if newest_first:
-        faceoffs = list(reversed(faceoffs))
-    html_lines = "".join(
-        f"<div style='padding:4px 0;'>"
-        f"<span style='font-weight:600;'>{str(f['faceoff_number']).rjust(2)}</span>"
-        f"&nbsp;&nbsp;{f['time_remaining']}&nbsp;&nbsp;{f['team']}"
-        f"</div>"
-        for f in faceoffs
-    )
-    st.markdown(
-        f'<div style="font-family:monospace; font-size:15px; line-height:1.6;">{html_lines}</div>',
-        unsafe_allow_html=True,
-    )
-
 
 def build_first_sog_after_faceoff(period_faceoffs: list[dict], period_events: list[dict]) -> list[dict]:
     results = []
@@ -550,14 +535,6 @@ if st.session_state.tracking:
                 unsafe_allow_html=True,
             )
             st.caption(f"P{live_period} faceoffs")
-
-            faceoff_periods = sorted({e["period"] for e in state["faceoffs"] if e["period"] is not None})
-            if faceoff_periods:
-                counter_tabs = st.tabs([f"P{p}" for p in faceoff_periods])
-                for tab, p in zip(counter_tabs, faceoff_periods):
-                    with tab:
-                        period_fo_list = [e for e in state["faceoffs"] if e["period"] == p]
-                        render_faceoff_list(period_fo_list, st.session_state.filter_recent)
 
     except Exception as e:
         st.error(f"Refresh error: {e}")
