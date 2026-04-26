@@ -294,6 +294,22 @@ def build_two_minute_buckets(period_events: list[dict], home_label: str, away_la
     return results
 
 
+def render_faceoff_list(faceoffs: list[dict], newest_first: bool):
+    if newest_first:
+        faceoffs = list(reversed(faceoffs))
+    html_lines = "".join(
+        f"<div style='padding:4px 0;'>"
+        f"<span style='font-weight:600;'>{str(f['faceoff_number']).rjust(2)}</span>"
+        f"&nbsp;&nbsp;{f['time_remaining']}&nbsp;&nbsp;{f['team']}"
+        f"</div>"
+        for f in faceoffs
+    )
+    st.markdown(
+        f'<div style="font-family:monospace; font-size:15px; line-height:1.6;">{html_lines}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def build_first_sog_after_faceoff(period_faceoffs: list[dict], period_events: list[dict]) -> list[dict]:
     results = []
     for faceoff in period_faceoffs:
@@ -376,11 +392,6 @@ with st.sidebar:
                 break
 
     st.divider()
-    label = "Newest First: ON" if st.session_state.filter_recent else "Newest First: OFF"
-    if st.button(label, use_container_width=True):
-        st.session_state.filter_recent = not st.session_state.filter_recent
-
-    st.divider()
     if st.button("Track Selected Game", use_container_width=True, type="primary"):
         if st.session_state.selected_game_id is None:
             st.warning("Load and select a game first.")
@@ -392,6 +403,10 @@ with st.sidebar:
             st.session_state.previous_sog_event_ids = {}
             st.session_state.warning_message = "STATUS: OK"
             st.session_state.warning_type = "ok"
+
+    label = "Newest First: ON" if st.session_state.filter_recent else "Newest First: OFF"
+    if st.button(label, use_container_width=True):
+        st.session_state.filter_recent = not st.session_state.filter_recent
 
 # Main area
 if st.session_state.tracking:
@@ -494,8 +509,8 @@ if st.session_state.tracking:
         period_events = [e for e in state["events"] if e["period"] == selected_period]
         period_faceoffs = [e for e in period_events if e["display_type"] == "FACEOFF"]
 
-        # Two panels side by side
-        left, right = st.columns(2)
+        # Three panels
+        left, mid, right = st.columns(3)
 
         with left:
             st.subheader(f"P{selected_period} — 2-Min SOG Buckets")
@@ -508,9 +523,11 @@ if st.session_state.tracking:
                 }
                 for b in bucket_results
             ]
+            if st.session_state.filter_recent:
+                rows = list(reversed(rows))
             st.dataframe(rows, use_container_width=True, hide_index=True)
 
-        with right:
+        with mid:
             st.subheader(f"P{selected_period} — First Shot After Faceoff")
             rows = build_first_sog_after_faceoff(period_faceoffs, period_events)
             if rows:
@@ -525,6 +542,22 @@ if st.session_state.tracking:
                     f"First faceoff this period — #{first_faceoff['faceoff_number']} "
                     f"at {first_faceoff['time_remaining']} | {first_faceoff['team']}"
                 )
+
+        with right:
+            st.subheader("Faceoff Counter")
+            st.markdown(
+                f"<div style='font-size:80px; font-weight:700; line-height:1;'>{live_period_faceoff_count}</div>",
+                unsafe_allow_html=True,
+            )
+            st.caption(f"P{live_period} faceoffs")
+
+            faceoff_periods = sorted({e["period"] for e in state["faceoffs"] if e["period"] is not None})
+            if faceoff_periods:
+                counter_tabs = st.tabs([f"P{p}" for p in faceoff_periods])
+                for tab, p in zip(counter_tabs, faceoff_periods):
+                    with tab:
+                        period_fo_list = [e for e in state["faceoffs"] if e["period"] == p]
+                        render_faceoff_list(period_fo_list, st.session_state.filter_recent)
 
     except Exception as e:
         st.error(f"Refresh error: {e}")
