@@ -262,16 +262,15 @@ def bucket_label(start_sec: int, end_sec: int) -> str:
     return f"{seconds_to_clock(start_sec)}-{seconds_to_clock(end_sec)}"
 
 
-def build_two_minute_buckets(period_events: list[dict], home_label: str, away_label: str) -> list[dict]:
+def build_two_minute_buckets(period_events: list[dict], home_label: str, away_label: str, period_finished: bool = False) -> list[dict]:
     buckets = [
         (1200, 1081), (1080, 961), (960, 841), (840, 721), (720, 601),
         (600, 481), (480, 361), (360, 241), (240, 121), (120, 1),
     ]
     sogs = [e for e in period_events if e["display_type"] in {"SOG", "GOAL"}]
 
-    # Best estimate of current clock: most recent event in the period
     clocks = [parse_clock_to_seconds(e["time_remaining"]) for e in period_events]
-    current_secs = min((s for s in clocks if s is not None), default=None)
+    current_secs = 0 if period_finished else min((s for s in clocks if s is not None), default=None)
 
     results = []
     for start, end in buckets:
@@ -280,8 +279,7 @@ def build_two_minute_buckets(period_events: list[dict], home_label: str, away_la
             if (secs := parse_clock_to_seconds(e["time_remaining"])) is not None
             and end <= secs <= start
         ]
-        # Bucket is complete only when the clock has passed its end boundary
-        complete = current_secs is not None and current_secs < end
+        complete = period_finished or (current_secs is not None and current_secs < end)
 
         home_hit = any(e["team"] == home_label for e in hits)
         away_hit = any(e["team"] == away_label for e in hits)
@@ -510,7 +508,7 @@ if st.session_state.tracking:
 
         with right:
             st.subheader(f"P{selected_period} — 2-Min SOG Buckets")
-            bucket_results = build_two_minute_buckets(period_events, state["home_label"], state["away_label"])
+            bucket_results = build_two_minute_buckets(period_events, state["home_label"], state["away_label"], period_finished=selected_period < live_period)
             rows = [
                 {
                     "Window": b["window"],
