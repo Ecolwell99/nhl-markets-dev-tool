@@ -340,7 +340,7 @@ def html_table(rows: list[dict]) -> str:
     )
     body = ""
     for i, row in enumerate(rows):
-        bg = "var(--background-color)" if i % 2 == 0 else "var(--secondary-background-color)"
+        bg = "rgba(128,128,128,0.04)" if i % 2 == 0 else "rgba(128,128,128,0.12)"
         tds = "".join(
             f'<td style="padding:6px 12px; font-size:13px; white-space:nowrap; color:var(--text-color);">{row[h]}</td>'
             for h in headers
