@@ -308,7 +308,7 @@ def build_two_minute_buckets(period_events: list[dict], home_label: str, away_la
 
 
 
-def build_first_sog_after_faceoff(period_faceoffs: list[dict], period_events: list[dict]) -> list[dict]:
+def build_first_sog_after_faceoff(period_faceoffs: list[dict], period_events: list[dict], all_events: list[dict] | None = None) -> list[dict]:
     results = []
     for faceoff in period_faceoffs:
         first_sog = None
@@ -321,11 +321,27 @@ def build_first_sog_after_faceoff(period_faceoffs: list[dict], period_events: li
                 first_sog = event
                 break
 
+        if first_sog is None and all_events:
+            found_anchor = False
+            for event in all_events:
+                if event["event_id"] == faceoff["event_id"]:
+                    found_anchor = True
+                    continue
+                if found_anchor and event["display_type"] in {"SOG", "GOAL"}:
+                    first_sog = event
+                    break
+
+        if first_sog:
+            same_period = first_sog["period"] == faceoff["period"]
+            shot_str = f"{first_sog['time_remaining']} {first_sog['team']}" if same_period else f"P{first_sog['period']} {first_sog['time_remaining']} {first_sog['team']}"
+        else:
+            shot_str = "NO"
+
         results.append({
             "Faceoff #": faceoff["faceoff_number"],
             "Faceoff Time": faceoff["time_remaining"],
             "Faceoff Team": faceoff["team"],
-            "First Shot": f"{first_sog['time_remaining']} {first_sog['team']}" if first_sog else "NO",
+            "First Shot": shot_str,
         })
     return results
 
@@ -613,7 +629,10 @@ if st.session_state.tracking:
                     unsafe_allow_html=True,
                 )
                 if lf := state["last_faceoff"]:
-                    st.caption(f"Last — P{lf['period']} {lf['time_remaining']} | {lf['team']} | #{lf['faceoff_number']}")
+                    st.markdown(
+                        f"<div style='text-align:center; font-size:13px; opacity:0.6;'>Last — P{lf['period']} {lf['time_remaining']} | {lf['team']} | #{lf['faceoff_number']}</div>",
+                        unsafe_allow_html=True,
+                    )
 
             st.divider()
 
@@ -632,7 +651,7 @@ if st.session_state.tracking:
 
             with left:
                 st.subheader(f"P{selected_period} — First Shot After Faceoff")
-                rows = build_first_sog_after_faceoff(period_faceoffs, period_events)
+                rows = build_first_sog_after_faceoff(period_faceoffs, period_events, state["events"])
                 if rows:
                     if st.session_state.filter_recent:
                         rows = list(reversed(rows))
