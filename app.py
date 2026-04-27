@@ -524,18 +524,17 @@ if st.session_state.tracking:
             st.divider()
 
             periods_present = sorted({e["period"] for e in state["events"] if e["period"] is not None}) or [1]
-
-            left, right = st.columns(2)
-
-            with left:
-                selected_period = st.selectbox(
-                    "Period",
-                    options=periods_present,
-                    index=periods_present.index(live_period) if live_period in periods_present else len(periods_present) - 1,
-                )
+            selected_period = st.selectbox(
+                "Period",
+                options=periods_present,
+                index=periods_present.index(live_period) if live_period in periods_present else len(periods_present) - 1,
+                label_visibility="collapsed",
+            )
 
             period_events = [e for e in state["events"] if e["period"] == selected_period]
             period_faceoffs = [e for e in period_events if e["display_type"] == "FACEOFF"]
+
+            left, right = st.columns(2)
 
             with left:
                 st.subheader(f"P{selected_period} — First Shot After Faceoff")
