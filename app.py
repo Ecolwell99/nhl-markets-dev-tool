@@ -229,6 +229,10 @@ def get_game_state(game_id: int) -> dict:
     live_period_faceoffs = [e for e in faceoffs if e["period"] == live_period]
     home_abbrev, away_abbrev = get_home_away_abbrevs(data)
 
+    clock = data.get("clock") or {}
+    clock_secs = parse_clock_to_seconds(clock.get("timeRemaining", ""))
+    in_intermission = bool(clock.get("inIntermission", False))
+
     return {
         "events": events,
         "faceoffs": faceoffs,
@@ -244,6 +248,8 @@ def get_game_state(game_id: int) -> dict:
         "away_abbrev": away_abbrev,
         "home_label": f"{home_abbrev} (Home)",
         "away_label": f"{away_abbrev} (Away)",
+        "clock_secs": clock_secs,
+        "in_intermission": in_intermission,
     }
 
 
@@ -265,15 +271,20 @@ def bucket_label(start_sec: int, end_sec: int) -> str:
     return f"{seconds_to_clock(start_sec)}-{seconds_to_clock(end_sec)}"
 
 
-def build_two_minute_buckets(period_events: list[dict], home_label: str, away_label: str, period_finished: bool = False) -> list[dict]:
+def build_two_minute_buckets(period_events: list[dict], home_label: str, away_label: str, period_finished: bool = False, clock_secs: int | None = None) -> list[dict]:
     buckets = [
         (1200, 1081), (1080, 961), (960, 841), (840, 721), (720, 601),
         (600, 481), (480, 361), (360, 241), (240, 121), (120, 1),
     ]
     sogs = [e for e in period_events if e["display_type"] in {"SOG", "GOAL"}]
 
-    clocks = [parse_clock_to_seconds(e["time_remaining"]) for e in period_events]
-    current_secs = 0 if period_finished else min((s for s in clocks if s is not None), default=None)
+    if period_finished:
+        current_secs = 0
+    elif clock_secs is not None:
+        current_secs = clock_secs
+    else:
+        clocks = [parse_clock_to_seconds(e["time_remaining"]) for e in period_events]
+        current_secs = min((s for s in clocks if s is not None), default=None)
 
     results = []
     for start, end in buckets:
@@ -376,6 +387,16 @@ with st.sidebar:
             if game["label"] == selected_label:
                 st.session_state.selected_game_id = game["id"]
                 break
+
+    st.divider()
+    manual_id = st.text_input("Or enter a Game ID manually", placeholder="e.g. 2024030411")
+    if st.button("Load Manual Game ID", use_container_width=True):
+        if manual_id.strip().isdigit():
+            st.session_state.selected_game_id = int(manual_id.strip())
+            st.session_state.selected_game_label = f"Manual ({manual_id.strip()})"
+            st.success(f"Game ID {manual_id.strip()} loaded.")
+        else:
+            st.error("Enter a numeric game ID.")
 
     st.divider()
     if st.button("Track Selected Game", use_container_width=True, type="primary"):
@@ -503,7 +524,10 @@ if st.session_state.tracking:
             st.divider()
 
             periods_present = sorted({e["period"] for e in state["events"] if e["period"] is not None}) or [1]
-            with st.columns([1, 3])[0]:
+
+            left, right = st.columns(2)
+
+            with left:
                 selected_period = st.selectbox(
                     "Period",
                     options=periods_present,
@@ -512,8 +536,6 @@ if st.session_state.tracking:
 
             period_events = [e for e in state["events"] if e["period"] == selected_period]
             period_faceoffs = [e for e in period_events if e["display_type"] == "FACEOFF"]
-
-            left, right = st.columns(2)
 
             with left:
                 st.subheader(f"P{selected_period} — First Shot After Faceoff")
@@ -527,7 +549,12 @@ if st.session_state.tracking:
 
             with right:
                 st.subheader(f"P{selected_period} — 2-Min SOG Buckets")
-                bucket_results = build_two_minute_buckets(period_events, state["home_label"], state["away_label"], period_finished=selected_period < live_period)
+                period_finished = selected_period < live_period or (selected_period == live_period and state["in_intermission"])
+                bucket_results = build_two_minute_buckets(
+                    period_events, state["home_label"], state["away_label"],
+                    period_finished=period_finished,
+                    clock_secs=state["clock_secs"] if selected_period == live_period else None,
+                )
                 rows = [
                     {
                         "Window": b["window"],
@@ -545,4 +572,3 @@ if st.session_state.tracking:
 else:
     warning_box("STATUS: OK", "ok")
     st.info("Load live games, select one, and click Track Selected Game.")
-
