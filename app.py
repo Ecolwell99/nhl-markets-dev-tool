@@ -356,7 +356,7 @@ def html_table(rows: list[dict], color_mode: bool = False) -> str:
     headers = list(rows[0].keys())
     th = "".join(
         f'<th style="padding:6px 12px; text-align:left; border-bottom:2px solid var(--secondary-background-color); '
-        f'font-size:13px; color:var(--text-color); opacity:0.6; white-space:nowrap;">{h}</th>'
+        f'font-size:13px; color:var(--text-color); font-weight:700; white-space:nowrap;">{h}</th>'
         for h in headers
     )
     body = ""
@@ -378,7 +378,7 @@ def html_table(rows: list[dict], color_mode: bool = False) -> str:
                         display = val
             else:
                 display = val
-            tds += f'<td style="padding:6px 12px; font-size:13px; white-space:nowrap; color:var(--text-color);">{display}</td>'
+            tds += f'<td style="padding:6px 12px; font-size:13px; white-space:nowrap; color:var(--text-color); font-weight:600;">{display}</td>'
         body += f'<tr style="background-color:{bg};">{tds}</tr>'
     return (
         f'<div style="overflow-x:auto; width:100%;">'
@@ -651,8 +651,8 @@ if st.session_state.tracking:
                 rows = [
                     {
                         "Window": b["window"],
-                        state["home_label"]: b["home_result"],
                         state["away_label"]: b["away_result"],
+                        state["home_label"]: b["home_result"],
                     }
                     for b in bucket_results
                 ]
