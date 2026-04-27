@@ -367,15 +367,18 @@ def html_table(rows: list[dict], color_mode: bool = False) -> str:
             val = row[h]
             if color_mode:
                 if val == "YES":
-                    cell_color = "#00cc44"
+                    display = f'<span style="background-color:#00cc44; color:#000; padding:2px 10px; border-radius:12px; font-weight:700; font-size:12px;">YES</span>'
                 elif val == "NO":
-                    cell_color = "#cc2200"
+                    display = f'<span style="background-color:#cc2200; color:#fff; padding:2px 10px; border-radius:12px; font-weight:700; font-size:12px;">NO</span>'
                 else:
                     team_color = team_color_for(str(val))
-                    cell_color = team_color if team_color else "var(--text-color)"
+                    if team_color:
+                        display = f'<span style="background-color:{team_color}; color:#fff; padding:2px 10px; border-radius:12px; font-weight:700; font-size:12px;">{val}</span>'
+                    else:
+                        display = val
             else:
-                cell_color = "var(--text-color)"
-            tds += f'<td style="padding:6px 12px; font-size:13px; white-space:nowrap; color:{cell_color}; font-weight:{"600" if color_mode and cell_color != "var(--text-color)" else "400"};">{val}</td>'
+                display = val
+            tds += f'<td style="padding:6px 12px; font-size:13px; white-space:nowrap; color:var(--text-color);">{display}</td>'
         body += f'<tr style="background-color:{bg};">{tds}</tr>'
     return (
         f'<div style="overflow-x:auto; width:100%;">'
