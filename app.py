@@ -348,6 +348,21 @@ def warning_box(message: str, warning_type: str):
 
 init_state()
 
+st.markdown(
+    """
+    <style>
+    [data-testid="column"] {
+        min-width: 320px;
+        flex: 1 1 320px;
+    }
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Sidebar: controls
 with st.sidebar:
     st.title("NHL Markets")
@@ -571,3 +586,4 @@ if st.session_state.tracking:
 else:
     warning_box("STATUS: OK", "ok")
     st.info("Load live games, select one, and click Track Selected Game.")
+
