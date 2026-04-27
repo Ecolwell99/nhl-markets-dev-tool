@@ -29,6 +29,7 @@ def init_state():
         "alert_shown_until": 0.0,
         "alert_log": [],
         "filter_recent": False,
+        "color_mode": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -329,7 +330,27 @@ def build_first_sog_after_faceoff(period_faceoffs: list[dict], period_events: li
     return results
 
 
-def html_table(rows: list[dict]) -> str:
+TEAM_COLORS = {
+    "ANA": "#F47A38", "ARI": "#8C2633", "BOS": "#FFB81C", "BUF": "#003087",
+    "CAR": "#CC0000", "CBJ": "#002654", "CGY": "#C8102E", "CHI": "#CF0A2C",
+    "COL": "#6F263D", "DAL": "#006847", "DET": "#CE1126", "EDM": "#FF4C00",
+    "FLA": "#C8102E", "LAK": "#111111", "MIN": "#154734", "MTL": "#AF1E2D",
+    "NJD": "#CE1126", "NSH": "#FFB81C", "NYI": "#00539B", "NYR": "#0038A8",
+    "OTT": "#C8102E", "PHI": "#F74902", "PIT": "#FCB514", "SEA": "#99D9D9",
+    "SJS": "#006D75", "STL": "#002F87", "TBL": "#002868", "TOR": "#003E7E",
+    "UTA": "#6CACE4", "VAN": "#00843D", "VGK": "#B4975A", "WSH": "#C8102E",
+    "WPG": "#041E42",
+}
+
+
+def team_color_for(cell_value: str) -> str | None:
+    for abbrev, color in TEAM_COLORS.items():
+        if abbrev in cell_value:
+            return color
+    return None
+
+
+def html_table(rows: list[dict], color_mode: bool = False) -> str:
     if not rows:
         return ""
     headers = list(rows[0].keys())
@@ -341,10 +362,20 @@ def html_table(rows: list[dict]) -> str:
     body = ""
     for i, row in enumerate(rows):
         bg = "rgba(128,128,128,0.04)" if i % 2 == 0 else "rgba(128,128,128,0.12)"
-        tds = "".join(
-            f'<td style="padding:6px 12px; font-size:13px; white-space:nowrap; color:var(--text-color);">{row[h]}</td>'
-            for h in headers
-        )
+        tds = ""
+        for h in headers:
+            val = row[h]
+            if color_mode:
+                if val == "YES":
+                    cell_color = "#00cc44"
+                elif val == "NO":
+                    cell_color = "#cc2200"
+                else:
+                    team_color = team_color_for(str(val))
+                    cell_color = team_color if team_color else "var(--text-color)"
+            else:
+                cell_color = "var(--text-color)"
+            tds += f'<td style="padding:6px 12px; font-size:13px; white-space:nowrap; color:{cell_color}; font-weight:{"600" if color_mode and cell_color != "var(--text-color)" else "400"};">{val}</td>'
         body += f'<tr style="background-color:{bg};">{tds}</tr>'
     return (
         f'<div style="overflow-x:auto; width:100%;">'
@@ -461,6 +492,10 @@ with st.sidebar:
     label = "Newest First: ON" if st.session_state.filter_recent else "Newest First: OFF"
     if st.button(label, use_container_width=True):
         st.session_state.filter_recent = not st.session_state.filter_recent
+
+    color_label = "Color Mode: ON" if st.session_state.color_mode else "Color Mode: OFF"
+    if st.button(color_label, use_container_width=True):
+        st.session_state.color_mode = not st.session_state.color_mode
 
 # Main area
 if st.session_state.tracking:
@@ -598,7 +633,7 @@ if st.session_state.tracking:
                 if rows:
                     if st.session_state.filter_recent:
                         rows = list(reversed(rows))
-                    st.markdown(html_table(rows), unsafe_allow_html=True)
+                    st.markdown(html_table(rows, st.session_state.color_mode), unsafe_allow_html=True)
                 else:
                     st.info("No faceoffs found in this period.")
 
@@ -620,7 +655,7 @@ if st.session_state.tracking:
                 ]
                 if st.session_state.filter_recent:
                     rows = list(reversed(rows))
-                st.markdown(html_table(rows), unsafe_allow_html=True)
+                st.markdown(html_table(rows, st.session_state.color_mode), unsafe_allow_html=True)
 
         except Exception as e:
             st.error(f"Refresh error: {e}")
