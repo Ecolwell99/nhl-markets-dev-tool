@@ -366,6 +366,13 @@ def team_color_for(cell_value: str) -> str | None:
     return None
 
 
+def pill_text_color(bg_hex: str) -> str:
+    h = bg_hex.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return "#000" if luminance > 0.5 else "#fff"
+
+
 def html_table(rows: list[dict], color_mode: bool = False) -> str:
     if not rows:
         return ""
@@ -389,7 +396,8 @@ def html_table(rows: list[dict], color_mode: bool = False) -> str:
                 else:
                     team_color = team_color_for(str(val))
                     if team_color:
-                        display = f'<span style="background-color:{team_color}; color:#fff; padding:2px 10px; border-radius:12px; font-weight:700; font-size:12px;">{val}</span>'
+                        text_color = pill_text_color(team_color)
+                        display = f'<span style="background-color:{team_color}; color:{text_color}; padding:2px 10px; border-radius:12px; font-weight:700; font-size:12px;">{val}</span>'
                     else:
                         display = val
             else:
