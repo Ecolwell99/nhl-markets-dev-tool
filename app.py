@@ -340,7 +340,7 @@ def html_table(rows: list[dict]) -> str:
     )
     body = ""
     for i, row in enumerate(rows):
-        bg = "#1e1e1e" if i % 2 == 0 else "#262626"
+        bg = "#0e0e0e" if i % 2 == 0 else "#141414"
         tds = "".join(
             f'<td style="padding:6px 12px; font-size:13px; white-space:nowrap;">{row[h]}</td>'
             for h in headers
