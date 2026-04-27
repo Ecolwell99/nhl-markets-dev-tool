@@ -358,6 +358,12 @@ st.markdown(
     [data-testid="stHorizontalBlock"] {
         flex-wrap: wrap;
     }
+    .ag-row-selected .ag-cell {
+        background-color: rgba(255, 153, 0, 0.2) !important;
+    }
+    .ag-cell-focus {
+        border-color: transparent !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -442,7 +448,16 @@ if st.session_state.tracking:
             if st.button("Clear Log", key="clear_log"):
                 st.session_state.alert_log = []
                 st.rerun()
-            st.dataframe(list(reversed(log)), use_container_width=True, hide_index=True)
+            for entry in reversed(log):
+                color = "#ff9900" if entry["Type"] == "alert" else "#66ff99"
+                st.markdown(
+                    f'<div style="padding:10px 14px; margin-bottom:6px; border-radius:8px; '
+                    f'background-color:#1a1a1a; border-left:4px solid {color}; '
+                    f'font-size:15px;">'
+                    f'<span style="font-weight:700; color:{color};">P{entry["Period"]}</span>'
+                    f'&nbsp;&nbsp;{entry["Alert"]}</div>',
+                    unsafe_allow_html=True,
+                )
         else:
             st.info("No alerts recorded yet.")
 
@@ -586,4 +601,3 @@ if st.session_state.tracking:
 else:
     warning_box("STATUS: OK", "ok")
     st.info("Load live games, select one, and click Track Selected Game.")
-
