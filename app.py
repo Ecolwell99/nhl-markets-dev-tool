@@ -334,15 +334,15 @@ def html_table(rows: list[dict]) -> str:
         return ""
     headers = list(rows[0].keys())
     th = "".join(
-        f'<th style="padding:6px 12px; text-align:left; border-bottom:2px solid #333; '
-        f'font-size:13px; color:#aaa; white-space:nowrap;">{h}</th>'
+        f'<th style="padding:6px 12px; text-align:left; border-bottom:2px solid var(--secondary-background-color); '
+        f'font-size:13px; color:var(--text-color); opacity:0.6; white-space:nowrap;">{h}</th>'
         for h in headers
     )
     body = ""
     for i, row in enumerate(rows):
-        bg = "#0e0e0e" if i % 2 == 0 else "#141414"
+        bg = "var(--background-color)" if i % 2 == 0 else "var(--secondary-background-color)"
         tds = "".join(
-            f'<td style="padding:6px 12px; font-size:13px; white-space:nowrap;">{row[h]}</td>'
+            f'<td style="padding:6px 12px; font-size:13px; white-space:nowrap; color:var(--text-color);">{row[h]}</td>'
             for h in headers
         )
         body += f'<tr style="background-color:{bg};">{tds}</tr>'
@@ -478,8 +478,8 @@ if st.session_state.tracking:
                 color = "#ff9900" if entry["Type"] == "alert" else "#66ff99"
                 st.markdown(
                     f'<div style="padding:10px 14px; margin-bottom:6px; border-radius:8px; '
-                    f'background-color:#1a1a1a; border-left:4px solid {color}; '
-                    f'font-size:15px;">'
+                    f'background-color:var(--secondary-background-color); border-left:4px solid {color}; '
+                    f'font-size:15px; color:var(--text-color);">'
                     f'<span style="font-weight:700; color:{color};">P{entry["Period"]}</span>'
                     f'&nbsp;&nbsp;{entry["Alert"]}</div>',
                     unsafe_allow_html=True,
