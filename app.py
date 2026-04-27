@@ -329,6 +329,32 @@ def build_first_sog_after_faceoff(period_faceoffs: list[dict], period_events: li
     return results
 
 
+def html_table(rows: list[dict]) -> str:
+    if not rows:
+        return ""
+    headers = list(rows[0].keys())
+    th = "".join(
+        f'<th style="padding:6px 12px; text-align:left; border-bottom:2px solid #333; '
+        f'font-size:13px; color:#aaa; white-space:nowrap;">{h}</th>'
+        for h in headers
+    )
+    body = ""
+    for i, row in enumerate(rows):
+        bg = "#1e1e1e" if i % 2 == 0 else "#262626"
+        tds = "".join(
+            f'<td style="padding:6px 12px; font-size:13px; white-space:nowrap;">{row[h]}</td>'
+            for h in headers
+        )
+        body += f'<tr style="background-color:{bg};">{tds}</tr>'
+    return (
+        f'<div style="overflow-x:auto; width:100%;">'
+        f'<table style="width:100%; border-collapse:collapse;">'
+        f'<thead><tr>{th}</tr></thead>'
+        f'<tbody>{body}</tbody>'
+        f'</table></div>'
+    )
+
+
 _WARNING_STYLES = {
     "alert": ("background-color:#3a1600", "color:#ffd966", "border:2px solid #ff9900"),
     "ok": ("background-color:#132117", "color:#66ff99", "border:2px solid #2e6b45"),
@@ -572,7 +598,7 @@ if st.session_state.tracking:
                 if rows:
                     if st.session_state.filter_recent:
                         rows = list(reversed(rows))
-                    st.dataframe(rows, use_container_width=True, hide_index=True, height=35 * len(rows) + 38)
+                    st.markdown(html_table(rows), unsafe_allow_html=True)
                 else:
                     st.info("No faceoffs found in this period.")
 
@@ -594,7 +620,7 @@ if st.session_state.tracking:
                 ]
                 if st.session_state.filter_recent:
                     rows = list(reversed(rows))
-                st.dataframe(rows, use_container_width=True, hide_index=True)
+                st.markdown(html_table(rows), unsafe_allow_html=True)
 
         except Exception as e:
             st.error(f"Refresh error: {e}")
