@@ -503,14 +503,6 @@ init_state()
 st.markdown(
     """
     <style>
-    [data-testid="column"] {
-        min-width: 320px;
-        flex: 1 1 320px;
-        overflow: hidden;
-    }
-    [data-testid="stHorizontalBlock"] {
-        flex-wrap: wrap;
-    }
     .ag-row-selected .ag-cell {
         background-color: rgba(255, 153, 0, 0.2) !important;
     }
@@ -731,37 +723,33 @@ if st.session_state.tracking:
             away_sog = sum(1 for e in period_events if e["display_type"] in {"SOG", "GOAL"} and e["team"] == state["away_label"])
             st.markdown(f"**SOG — {state['away_label']}: {away_sog} | {state['home_label']}: {home_sog}**")
 
-            left, right = st.columns(2)
-
-            with left:
-                st.subheader(f"P{selected_period} — First Shot After Faceoff")
-                rows = build_first_sog_after_faceoff(period_faceoffs, period_events, state["events"])
-                if rows:
-                    if st.session_state.filter_recent:
-                        rows = list(reversed(rows))
-                    st.markdown(html_table(rows, st.session_state.color_mode), unsafe_allow_html=True)
-                else:
-                    st.info("No faceoffs found in this period.")
-
-            with right:
-                st.subheader(f"P{selected_period} — 2-Min SOG Buckets")
-                period_finished = selected_period < live_period or (selected_period == live_period and state["in_intermission"])
-                bucket_results = build_two_minute_buckets(
-                    period_events, state["home_label"], state["away_label"],
-                    period_finished=period_finished,
-                    clock_secs=state["clock_secs"] if selected_period == live_period else None,
-                )
-                rows = [
-                    {
-                        "Window": b["window"],
-                        state["away_label"]: b["away_result"],
-                        state["home_label"]: b["home_result"],
-                    }
-                    for b in bucket_results
-                ]
+            st.subheader(f"P{selected_period} — First Shot After Faceoff")
+            rows = build_first_sog_after_faceoff(period_faceoffs, period_events, state["events"])
+            if rows:
                 if st.session_state.filter_recent:
                     rows = list(reversed(rows))
                 st.markdown(html_table(rows, st.session_state.color_mode), unsafe_allow_html=True)
+            else:
+                st.info("No faceoffs found in this period.")
+
+            st.subheader(f"P{selected_period} — 2-Min SOG Buckets")
+            period_finished = selected_period < live_period or (selected_period == live_period and state["in_intermission"])
+            bucket_results = build_two_minute_buckets(
+                period_events, state["home_label"], state["away_label"],
+                period_finished=period_finished,
+                clock_secs=state["clock_secs"] if selected_period == live_period else None,
+            )
+            rows = [
+                {
+                    "Window": b["window"],
+                    state["away_label"]: b["away_result"],
+                    state["home_label"]: b["home_result"],
+                }
+                for b in bucket_results
+            ]
+            if st.session_state.filter_recent:
+                rows = list(reversed(rows))
+            st.markdown(html_table(rows, st.session_state.color_mode), unsafe_allow_html=True)
 
             st.divider()
             st.subheader(f"P{selected_period} — Goals")
