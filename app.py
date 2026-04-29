@@ -305,7 +305,6 @@ def get_game_state(game_id: int) -> dict:
         "clock_secs": clock_secs,
         "in_intermission": in_intermission,
         "goals": [e for e in events if e["display_type"] == "GOAL"],
-        "raw_plays": data.get("plays", []),
     }
 
 
@@ -761,6 +760,13 @@ if st.session_state.tracking:
                 st.markdown(html_table(rows, st.session_state.color_mode), unsafe_allow_html=True)
 
             st.divider()
+            home_sog = sum(1 for e in period_events if e["display_type"] in {"SOG", "GOAL"} and e["team"] == state["home_label"])
+            away_sog = sum(1 for e in period_events if e["display_type"] in {"SOG", "GOAL"} and e["team"] == state["away_label"])
+            st.markdown(
+                f"**P{selected_period} SOG — {state['away_label']}: {away_sog} | {state['home_label']}: {home_sog}**"
+            )
+
+            st.divider()
             st.subheader(f"P{selected_period} — Goals")
             goal_rows = build_goal_log(period_events)
             if goal_rows:
@@ -770,9 +776,6 @@ if st.session_state.tracking:
             else:
                 st.info("No goals this period.")
 
-            with st.expander("Debug: raw play types"):
-                type_keys = sorted({str(p.get("typeDescKey", "")).lower() for p in state["raw_plays"]})
-                st.write(type_keys)
 
         except RateLimitedError:
             st.session_state.warning_message = "⚠ RATE LIMITED — retrying next tick"
