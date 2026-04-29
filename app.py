@@ -713,7 +713,7 @@ if st.session_state.tracking:
 
             home_sog = sum(1 for e in period_events if e["display_type"] in {"SOG", "GOAL"} and e["team"] == state["home_label"])
             away_sog = sum(1 for e in period_events if e["display_type"] in {"SOG", "GOAL"} and e["team"] == state["away_label"])
-            st.markdown(f"<div style='text-align:center; font-weight:700; font-size:16px;'>SOG — {state['away_label']}: {away_sog} | {state['home_label']}: {home_sog}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:center; font-weight:700; font-size:22px;'>SOG — {state['away_label']}: {away_sog} | {state['home_label']}: {home_sog}</div>", unsafe_allow_html=True)
 
             st.markdown(f"<div style='text-align:center; font-size:20px; font-weight:700; margin-top:16px;'>P{selected_period} — First Shot After Faceoff</div>", unsafe_allow_html=True)
             rows = build_first_sog_after_faceoff(period_faceoffs, period_events, state["events"])
