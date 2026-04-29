@@ -687,24 +687,16 @@ if st.session_state.tracking:
 
             warning_box(st.session_state.warning_message, st.session_state.warning_type)
 
-            hero_left, hero_right = st.columns([1, 3])
-            with hero_left:
+            st.markdown(
+                f"<div style='text-align:center; font-size:22px; font-weight:600; opacity:0.6; margin-bottom:4px;'>P{live_period} LIVE FACEOFFS</div>"
+                f"<div style='text-align:center; font-size:80px; font-weight:700; line-height:1;'>{live_period_faceoff_count}</div>",
+                unsafe_allow_html=True,
+            )
+            if lf := state["last_faceoff"]:
                 st.markdown(
-                    f"<div style='text-align:center; font-size:22px; font-weight:600; opacity:0.6; margin-bottom:4px;'>PERIOD</div>"
-                    f"<div style='text-align:center; font-size:60px; font-weight:700; line-height:1;'>{live_period}</div>",
+                    f"<div style='text-align:center; font-size:13px; opacity:0.6;'>Last — P{lf['period']} {lf['time_remaining']} | {lf['team']} | #{lf['faceoff_number']}</div>",
                     unsafe_allow_html=True,
                 )
-            with hero_right:
-                st.markdown(
-                    f"<div style='text-align:center; font-size:22px; font-weight:600; opacity:0.6; margin-bottom:4px;'>LIVE FACEOFFS</div>"
-                    f"<div style='text-align:center; font-size:80px; font-weight:700; line-height:1;'>{live_period_faceoff_count}</div>",
-                    unsafe_allow_html=True,
-                )
-                if lf := state["last_faceoff"]:
-                    st.markdown(
-                        f"<div style='text-align:center; font-size:13px; opacity:0.6;'>Last — P{lf['period']} {lf['time_remaining']} | {lf['team']} | #{lf['faceoff_number']}</div>",
-                        unsafe_allow_html=True,
-                    )
 
             st.divider()
 
