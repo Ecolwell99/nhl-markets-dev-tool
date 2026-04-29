@@ -727,6 +727,10 @@ if st.session_state.tracking:
             period_events = [e for e in state["events"] if e["period"] == selected_period]
             period_faceoffs = [e for e in period_events if e["display_type"] == "FACEOFF"]
 
+            home_sog = sum(1 for e in period_events if e["display_type"] in {"SOG", "GOAL"} and e["team"] == state["home_label"])
+            away_sog = sum(1 for e in period_events if e["display_type"] in {"SOG", "GOAL"} and e["team"] == state["away_label"])
+            st.markdown(f"**SOG — {state['away_label']}: {away_sog} | {state['home_label']}: {home_sog}**")
+
             left, right = st.columns(2)
 
             with left:
@@ -758,13 +762,6 @@ if st.session_state.tracking:
                 if st.session_state.filter_recent:
                     rows = list(reversed(rows))
                 st.markdown(html_table(rows, st.session_state.color_mode), unsafe_allow_html=True)
-
-            st.divider()
-            home_sog = sum(1 for e in period_events if e["display_type"] in {"SOG", "GOAL"} and e["team"] == state["home_label"])
-            away_sog = sum(1 for e in period_events if e["display_type"] in {"SOG", "GOAL"} and e["team"] == state["away_label"])
-            st.markdown(
-                f"**P{selected_period} SOG — {state['away_label']}: {away_sog} | {state['home_label']}: {home_sog}**"
-            )
 
             st.divider()
             st.subheader(f"P{selected_period} — Goals")
