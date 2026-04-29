@@ -14,6 +14,8 @@ SHOT_TYPES = {"shot-on-goal", "goal"}
 st.set_page_config(page_title="NHL Markets Dev Tool", layout="wide")
 
 
+STATE_VERSION = 2
+
 def init_state():
     defaults = {
         "games": [],
@@ -28,16 +30,27 @@ def init_state():
         "warning_type": "ok",
         "alert_shown_until": 0.0,
         "alert_log": [],
-        "filter_recent": False,
-        "color_mode": False,
+        "filter_recent": True,
+        "color_mode": True,
     }
-    for key, value in defaults.items():
-        if key not in st.session_state:
+    if st.session_state.get("_state_version") != STATE_VERSION:
+        for key, value in defaults.items():
             st.session_state[key] = value
+        st.session_state["_state_version"] = STATE_VERSION
+    else:
+        for key, value in defaults.items():
+            if key not in st.session_state:
+                st.session_state[key] = value
+
+
+class RateLimitedError(Exception):
+    pass
 
 
 def fetch_json(url: str) -> dict:
     response = requests.get(url, timeout=10)
+    if response.status_code == 429:
+        raise RateLimitedError("Rate limited by NHL API (429)")
     response.raise_for_status()
     return response.json()
 
@@ -155,10 +168,40 @@ def label_home_away(team: str, home_abbrev: str, away_abbrev: str) -> str:
     return team
 
 
+def build_player_lookup(game_data: dict) -> dict:
+    lookup = {}
+    for spot in game_data.get("rosterSpots") or []:
+        pid = spot.get("playerId")
+        if pid:
+            first = spot.get("firstName") or {}
+            last = spot.get("lastName") or {}
+            first_str = first.get("default", "") if isinstance(first, dict) else str(first)
+            last_str = last.get("default", "") if isinstance(last, dict) else str(last)
+            lookup[pid] = f"{first_str} {last_str}".strip()
+    return lookup
+
+
+def decode_strength(situation_code: str) -> str:
+    if not situation_code or len(situation_code) != 4:
+        return "EV"
+    away_skaters = int(situation_code[1])
+    home_skaters = int(situation_code[2])
+    away_goalie = situation_code[0] == "1"
+    home_goalie = situation_code[3] == "1"
+    if not away_goalie or not home_goalie:
+        return "EN"
+    if away_skaters == home_skaters:
+        return "EV"
+    if away_skaters > home_skaters:
+        return "PP" if away_skaters == 5 else "SH"
+    return "PP" if home_skaters == 5 else "SH"
+
+
 def parse_raw_events(game_data: dict) -> list[dict]:
     plays = game_data.get("plays") or []
     team_lookup = build_team_lookup(game_data)
     home_abbrev, away_abbrev = get_home_away_abbrevs(game_data)
+    player_lookup = build_player_lookup(game_data)
 
     deduped = {}
     for play in plays:
@@ -175,6 +218,14 @@ def parse_raw_events(game_data: dict) -> list[dict]:
 
         team = label_home_away(safe_team(play, team_lookup), home_abbrev, away_abbrev)
         period = (play.get("periodDescriptor") or {}).get("number")
+        details = play.get("details") or {}
+
+        scorer = None
+        strength = None
+        if display_type == "GOAL":
+            scorer_id = details.get("scoringPlayerId")
+            scorer = player_lookup.get(scorer_id, "Unknown") if scorer_id else "Unknown"
+            strength = decode_strength(play.get("situationCode", ""))
 
         deduped[play.get("eventId")] = {
             "event_id": play.get("eventId"),
@@ -186,6 +237,8 @@ def parse_raw_events(game_data: dict) -> list[dict]:
             "team": team,
             "raw_type": play_type,
             "display_type": display_type,
+            "scorer": scorer,
+            "strength": strength,
         }
 
     return list(deduped.values())
@@ -251,7 +304,23 @@ def get_game_state(game_id: int) -> dict:
         "away_label": f"{away_abbrev} (Away)",
         "clock_secs": clock_secs,
         "in_intermission": in_intermission,
+        "goals": [e for e in events if e["display_type"] == "GOAL"],
+        "raw_plays": data.get("plays", []),
     }
+
+
+def build_goal_log(period_events: list[dict]) -> list[dict]:
+    results = []
+    for e in period_events:
+        if e["display_type"] != "GOAL":
+            continue
+        results.append({
+            "Time": e["time_remaining"],
+            "Team": e["team"],
+            "Scorer": e["scorer"] or "Unknown",
+            "Strength": e["strength"] or "EV",
+        })
+    return results
 
 
 def bucket_for_sog(event: dict) -> str | None:
@@ -568,47 +637,50 @@ if st.session_state.tracking:
             prev_sog_ids = st.session_state.previous_sog_event_ids
 
             alerts = []
+            is_first_tick = previous_live_period is None
 
-            if previous_live_period == live_period:
-                if previous_faceoff_count is not None:
-                    delta = live_period_faceoff_count - previous_faceoff_count
-                    if delta < 0:
-                        alerts.append(f"FACEOFF COUNT DECREASE: {previous_faceoff_count} → {live_period_faceoff_count}")
-                    elif delta > 1:
-                        alerts.append(f"MULTIPLE FACEOFFS ADDED: +{delta}")
+            if not is_first_tick:
+                if previous_live_period == live_period:
+                    if previous_faceoff_count is not None:
+                        delta = live_period_faceoff_count - previous_faceoff_count
+                        if delta < 0:
+                            alerts.append((live_period, f"FACEOFF COUNT DECREASE: {previous_faceoff_count} → {live_period_faceoff_count}"))
+                        elif delta > 1:
+                            alerts.append((live_period, f"MULTIPLE FACEOFFS ADDED: +{delta}"))
 
-                for eid, (period, fo_num, team) in current_faceoff_teams.items():
-                    if eid in prev_faceoff_teams:
-                        _, _, prev_team = prev_faceoff_teams[eid]
-                        if prev_team != team:
-                            alerts.append(f"FACEOFF TEAM CHANGED: P{period} Faceoff #{fo_num} — {prev_team} → {team}")
+                    for eid, (period, fo_num, team) in current_faceoff_teams.items():
+                        if eid in prev_faceoff_teams:
+                            _, _, prev_team = prev_faceoff_teams[eid]
+                            if prev_team != team:
+                                alerts.append((period, f"FACEOFF TEAM CHANGED: P{period} Faceoff #{fo_num} — {prev_team} → {team}"))
 
-                for eid in prev_sog_ids:
-                    if eid not in current_sog_ids:
-                        prev_event = prev_sog_ids[eid] if isinstance(prev_sog_ids, dict) else None
-                        if prev_event:
-                            bucket = bucket_for_sog(prev_event)
-                            bucket_str = f" (bucket {bucket})" if bucket else ""
-                            alerts.append(
-                                f"SOG REMOVED: P{prev_event['period']} {prev_event['time_remaining']} "
-                                f"{prev_event['team']}{bucket_str}"
-                            )
-                        else:
-                            alerts.append(f"SOG REMOVED: event {eid}")
-            else:
-                alerts.append(f"Period {live_period} started")
+                    for eid in prev_sog_ids:
+                        if eid not in current_sog_ids:
+                            prev_event = prev_sog_ids[eid] if isinstance(prev_sog_ids, dict) else None
+                            if prev_event:
+                                bucket = bucket_for_sog(prev_event)
+                                bucket_str = f" (bucket {bucket})" if bucket else ""
+                                alerts.append((
+                                    prev_event["period"],
+                                    f"SOG REMOVED: P{prev_event['period']} {prev_event['time_remaining']} "
+                                    f"{prev_event['team']}{bucket_str}"
+                                ))
+                            else:
+                                alerts.append((live_period, f"SOG REMOVED: event {eid}"))
+                else:
+                    alerts.append((live_period, f"Period {live_period} started"))
 
             if alerts:
                 period_changed = previous_live_period != live_period
                 alert_type = "ok" if period_changed else "alert"
-                msg = " | ".join(f"⚠ {a}" for a in alerts)
+                msg = " | ".join(f"⚠ {a}" for _, a in alerts)
                 st.session_state.warning_message = msg
                 st.session_state.warning_type = alert_type
                 st.session_state.alert_shown_until = time.time() + 7
-                for a in alerts:
+                for period, a in alerts:
                     st.session_state.alert_log.append({
                         "Time": time.strftime("%H:%M:%S"),
-                        "Period": live_period,
+                        "Period": period,
                         "Alert": a,
                         "Type": alert_type,
                     })
@@ -687,6 +759,25 @@ if st.session_state.tracking:
                     rows = list(reversed(rows))
                 st.markdown(html_table(rows, st.session_state.color_mode), unsafe_allow_html=True)
 
+            st.divider()
+            st.subheader(f"P{selected_period} — Goals")
+            goal_rows = build_goal_log(period_events)
+            if goal_rows:
+                if st.session_state.filter_recent:
+                    goal_rows = list(reversed(goal_rows))
+                st.markdown(html_table(goal_rows, st.session_state.color_mode), unsafe_allow_html=True)
+            else:
+                st.info("No goals this period.")
+
+            with st.expander("Debug: raw play types"):
+                type_keys = sorted({str(p.get("typeDescKey", "")).lower() for p in state["raw_plays"]})
+                st.write(type_keys)
+
+        except RateLimitedError:
+            st.session_state.warning_message = "⚠ RATE LIMITED — retrying next tick"
+            st.session_state.warning_type = "alert"
+            st.session_state.alert_shown_until = time.time() + 15
+            warning_box(st.session_state.warning_message, st.session_state.warning_type)
         except Exception as e:
             st.error(f"Refresh error: {e}")
 else:
