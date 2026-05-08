@@ -1,3 +1,5 @@
+import json
+import os
 import time
 import requests
 import streamlit as st
@@ -41,6 +43,42 @@ def init_state():
         for key, value in defaults.items():
             if key not in st.session_state:
                 st.session_state[key] = value
+
+
+ALERT_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nhl_alert_logs")
+
+
+def alert_log_path(game_id: int) -> str:
+    return os.path.join(ALERT_LOG_DIR, f"game_{game_id}.json")
+
+
+def load_alert_log(game_id: int) -> list:
+    try:
+        path = alert_log_path(game_id)
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return []
+
+
+def save_alert_log(game_id: int, log: list):
+    try:
+        os.makedirs(ALERT_LOG_DIR, exist_ok=True)
+        with open(alert_log_path(game_id), "w") as f:
+            json.dump(log, f)
+    except Exception:
+        pass
+
+
+def clear_alert_log(game_id: int):
+    try:
+        path = alert_log_path(game_id)
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
 
 
 class RateLimitedError(Exception):
@@ -181,7 +219,7 @@ def build_player_lookup(game_data: dict) -> dict:
     return lookup
 
 
-def decode_strength(situation_code: str) -> str:
+def decode_strength(situation_code: str, scoring_abbrev: str | None = None, home_abbrev: str | None = None, away_abbrev: str | None = None) -> str:
     if not situation_code or len(situation_code) != 4:
         return "EV"
     away_skaters = int(situation_code[1])
@@ -192,9 +230,11 @@ def decode_strength(situation_code: str) -> str:
         return "EN"
     if away_skaters == home_skaters:
         return "EV"
-    if away_skaters > home_skaters:
-        return "PP" if away_skaters == 5 else "SH"
-    return "PP" if home_skaters == 5 else "SH"
+    away_has_advantage = away_skaters > home_skaters
+    if scoring_abbrev and home_abbrev and away_abbrev:
+        scoring_is_away = scoring_abbrev == away_abbrev
+        return "PP" if (away_has_advantage == scoring_is_away) else "SH"
+    return "PP" if (away_skaters == 5 or home_skaters == 5) else "EV"
 
 
 def parse_raw_events(game_data: dict) -> list[dict]:
@@ -225,7 +265,8 @@ def parse_raw_events(game_data: dict) -> list[dict]:
         if display_type == "GOAL":
             scorer_id = details.get("scoringPlayerId")
             scorer = player_lookup.get(scorer_id, "Unknown") if scorer_id else "Unknown"
-            strength = decode_strength(play.get("situationCode", ""))
+            scoring_team = safe_team(play, team_lookup)
+            strength = decode_strength(play.get("situationCode", ""), scoring_team, home_abbrev, away_abbrev)
 
         deduped[play.get("eventId")] = {
             "event_id": play.get("eventId"),
@@ -576,6 +617,7 @@ with st.sidebar:
             st.session_state.previous_sog_event_ids = {}
             st.session_state.warning_message = "STATUS: OK"
             st.session_state.warning_type = "ok"
+            st.session_state.alert_log = load_alert_log(st.session_state.selected_game_id)
 
     label = "Newest First: ON" if st.session_state.filter_recent else "Newest First: OFF"
     if st.button(label, use_container_width=True):
@@ -596,6 +638,7 @@ if st.session_state.tracking:
         if log:
             if st.button("Clear Log", key="clear_log"):
                 st.session_state.alert_log = []
+                clear_alert_log(st.session_state.selected_game_id)
                 st.rerun()
             for entry in reversed(log):
                 color = "#ff9900" if entry["Type"] == "alert" else "#66ff99"
@@ -676,6 +719,7 @@ if st.session_state.tracking:
                         "Alert": a,
                         "Type": alert_type,
                     })
+                save_alert_log(st.session_state.selected_game_id, st.session_state.alert_log)
             elif time.time() >= st.session_state.alert_shown_until:
                 st.session_state.warning_message = "STATUS: OK"
                 st.session_state.warning_type = "ok"
