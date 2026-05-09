@@ -2,6 +2,7 @@ import json
 import os
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import requests
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
@@ -752,7 +753,7 @@ if st.session_state.tracking:
                 st.session_state.alert_shown_until = time.time() + 7
                 for period, a in alerts:
                     st.session_state.alert_log.append({
-                        "Time": datetime.now().strftime("%H:%M:%S"),
+                        "Time": datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M:%S ET"),
                         "Period": period,
                         "Alert": a,
                         "Type": alert_type,
