@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from datetime import datetime
 import requests
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
@@ -226,14 +227,32 @@ def decode_strength(situation_code: str, scoring_abbrev: str | None = None, home
     home_skaters = int(situation_code[2])
     away_goalie = situation_code[0] == "1"
     home_goalie = situation_code[3] == "1"
+
     if away_skaters == home_skaters:
         return "EV"
-    # Unequal skaters: fall through to PP/SH logic regardless of goalie status.
-    # Covers 6v4 (goalie pulled on PP), EN goals, and delayed penalty scenarios.
+
     away_has_advantage = away_skaters > home_skaters
+
     if scoring_abbrev and home_abbrev and away_abbrev:
         scoring_is_away = scoring_abbrev == away_abbrev
+        scoring_goalie_pulled = (scoring_is_away and not away_goalie) or (not scoring_is_away and not home_goalie)
+
+        if scoring_goalie_pulled:
+            scoring_skaters = away_skaters if scoring_is_away else home_skaters
+            other_skaters = home_skaters if scoring_is_away else away_skaters
+            # Advantage of exactly 1 = the pulled goalie is the extra attacker = EV (delayed penalty)
+            # Advantage of 2+ = pre-existing PP with goalie also pulled = PP (e.g. 6v4)
+            return "EV" if (scoring_skaters - other_skaters) == 1 else "PP"
+
+        # Opposing team pulled goalie, scoring team did not = EN, treat as EV
+        if not away_goalie or not home_goalie:
+            return "EV"
+
         return "PP" if (away_has_advantage == scoring_is_away) else "SH"
+
+    # Fallback without team info
+    if not away_goalie or not home_goalie:
+        return "EV"
     return "PP" if (away_skaters == 5 or home_skaters == 5) else "EV"
 
 
@@ -733,7 +752,7 @@ if st.session_state.tracking:
                 st.session_state.alert_shown_until = time.time() + 7
                 for period, a in alerts:
                     st.session_state.alert_log.append({
-                        "Time": time.strftime("%H:%M:%S"),
+                        "Time": datetime.now().strftime("%H:%M:%S"),
                         "Period": period,
                         "Alert": a,
                         "Type": alert_type,
