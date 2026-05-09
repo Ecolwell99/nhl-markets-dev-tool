@@ -647,7 +647,8 @@ if st.session_state.tracking:
                     f'background-color:var(--secondary-background-color); border-left:4px solid {color}; '
                     f'font-size:15px; color:var(--text-color);">'
                     f'<span style="font-weight:700; color:{color};">P{entry["Period"]}</span>'
-                    f'&nbsp;&nbsp;{entry["Alert"]}</div>',
+                    f'&nbsp;&nbsp;{entry["Alert"]}'
+                    f'<span style="float:right; font-size:12px; opacity:0.55;">{entry.get("Time", "")}</span></div>',
                     unsafe_allow_html=True,
                 )
         else:
