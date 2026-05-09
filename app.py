@@ -226,10 +226,10 @@ def decode_strength(situation_code: str, scoring_abbrev: str | None = None, home
     home_skaters = int(situation_code[2])
     away_goalie = situation_code[0] == "1"
     home_goalie = situation_code[3] == "1"
-    if not away_goalie or not home_goalie:
-        return "EV"
     if away_skaters == home_skaters:
         return "EV"
+    # Unequal skaters: fall through to PP/SH logic regardless of goalie status.
+    # Covers 6v4 (goalie pulled on PP), EN goals, and delayed penalty scenarios.
     away_has_advantage = away_skaters > home_skaters
     if scoring_abbrev and home_abbrev and away_abbrev:
         scoring_is_away = scoring_abbrev == away_abbrev
